@@ -36,7 +36,7 @@ enum
 extern hi_u16 running;
 extern hi_u16 sitting;
 extern hi_u16 sedentariness;
-osTimerId_t five_second_tid;
+osTimerId_t five_seconds_tid;
 
 hi_void remind_Finish(hi_void)
 {
@@ -125,7 +125,7 @@ hi_void reminder(uint16_t type)
         OledShowString(0, 0, "Standing up and moving around for a while", 1);
         playone();
         hi_gpio_set_ouput_val(HI_GPIO_IDX_2, 0);
-        osTimerStart(five_second_tid, REMEINDING); // keep this remind 5 seconds
+        osTimerStart(five_seconds_tid, REMEINDING); // keep this remind 5 seconds
         break;
     default:
         OledShowString(0, 2, "Your sitting are healthy", 1);
@@ -138,9 +138,8 @@ static hi_void OledRemindering(hi_void)
     hi_u16 last, cur;
 
     last = NORMAL;
-    five_second_tid = osTimerNew(remind_Finish, osTimerPeriodic, NULL, NULL);
+    five_seconds_tid = osTimerNew(remind_Finish, osTimerPeriodic, NULL, NULL);
     setVol();
-    playone();
     while (1)
     {
         if (running)
@@ -173,7 +172,7 @@ static hi_void OledRemindering(hi_void)
     }
 }
 
-static hi_void OledReminderTask(hi_void *arg)
+static hi_void ReminderTask(hi_void *arg)
 {
     (void)arg;
 
@@ -186,7 +185,7 @@ static hi_void OledReminderTask(hi_void *arg)
     OledRemindering();
 }
 
-void OledReminder(void)
+void Reminder(void)
 {
     osThreadAttr_t attr;
     attr.name = "OledmentTask";
@@ -197,7 +196,7 @@ void OledReminder(void)
     attr.stack_size = 4096;
     attr.priority = 30;
 
-    if (osThreadNew(OledReminderTask, NULL, &attr) == NULL)
+    if (osThreadNew(ReminderTask, NULL, &attr) == NULL)
     {
         printf("[OledDemo] Falied to create OledmentTask!\n");
     }

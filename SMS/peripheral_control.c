@@ -32,28 +32,31 @@
 #define IOT_IO_PULL_UP 1
 #define STACK_SIZE (4096)
 
-#define FIVE_SECOND (500u) // 100U=1s
-#define FIVE_MINUTE (30000u)
-#define TIMER_DELAY_60S (6000U) //6000u
+#define ONE_SECOND (100u) // 100U=1s
+#define FIVE_SECONDS (500u)
+#define FIVE_MINUTES (30000u)
+#define TIMER_DELAY_60S (6000U) // 6000u
 #define HOUR (60)
 #define BEEPER_CONTINUING (500)
 #define HUMAN_EXIST (1000)
 
 extern hi_u16 sitting;
 extern hi_u16 running;
-hi_u16 cnt = 0;     //count an hour
-hi_u16 sedentariness;   //keep sitting too long
-hi_u16 sedentariness_begin;
-hi_u16 timer_finished=HI_TRUE;
-hi_float head;  //distance of head
-hi_u16 beepState;   //controled by bottom
+extern hi_u16 health_secs;
+extern hi_u16 existence_secs;
+hi_u16 cnt = 0;       // count an hour
+hi_u16 sedentariness; // keep sitting too long
+hi_float head;        // distance of head
+hi_u16 beepState;     // controled by bottom
 osTimerId_t beeper_tid;
-osTimerId_t FIVE_SECOND_tid;
+osTimerId_t FIVE_SECONDS_tid;
+osTimerId_t existence_tid;
 
-static hi_void OnButtonPressed(hi_void)
+static hi_void
+OnButtonPressed(hi_void)
 {
     beepState = HI_FALSE;
-    osTimerStart(beeper_tid, FIVE_MINUTE); // stop beeper 5 minutes
+    osTimerStart(beeper_tid, FIVE_MINUTES); // stop beeper 5 minutes
 }
 
 hi_void stop_beeper_fiveMin(hi_void)
@@ -64,7 +67,6 @@ hi_void stop_beeper_fiveMin(hi_void)
 hi_void human_leave(hi_void)
 {
     running = HI_FALSE;
-    sedentariness_begin = HI_FALSE;
     cnt = 0;
 }
 
@@ -72,13 +74,24 @@ hi_void human_leave(hi_void)
 hi_void count_hour(hi_void)
 {
     cnt++;
-    timer_finished = HI_TRUE;
-    if (cnt >= 30)
+    if (cnt >= 60)
     {
         sedentariness = HI_TRUE;
         cnt = 0;
     }
     printf("cnt:%d\n", cnt);
+}
+
+hi_void count_health(hi_void)
+{
+    health_secs++;
+    //printf("he:%d\n", health_secs);
+}
+
+hi_void count_existence(hi_void)
+{
+    existence_secs++;
+    //printf("ex:%d\n", existence_secs);
 }
 
 static hi_void light_Init(hi_void)
@@ -125,25 +138,33 @@ hi_void human_detect(hi_void)
     if (humanSensor > HUMAN_EXIST) // human exist-1800  no-100
     {
         running = HI_TRUE;
-        sedentariness_begin = HI_TRUE;
-        osTimerStop(FIVE_SECOND_tid);
-    }
-    else if (!osTimerIsRunning(FIVE_SECOND_tid))    //human not exist and a timer task finished
-    {
-        // printf("\ntimer start\n");
-        osTimerStart(FIVE_SECOND_tid, FIVE_SECOND);  //make sure human leave
-    }
+        if (!osTimerIsRunning(existence_tid))
+        {
 
+            osTimerStart(existence_tid, ONE_SECOND);
+        }
+        osTimerStop(FIVE_SECONDS_tid);
+    }
+    else
+    {
+        osTimerStop(existence_tid);
+        if (!osTimerIsRunning(FIVE_SECONDS_tid)) // human not exist and a timer task finished
+        {
+            // printf("\ntimer start\n");
+            osTimerStart(FIVE_SECONDS_tid, FIVE_SECONDS); // make sure human leave
+        }
+    }
 }
 
 static hi_void PeripheralControlTask(hi_void *arg)
 {
-    (hi_void)arg;
+    (hi_void) arg;
 
     light_Init();
     beeper_Init();
 
     osTimerId_t sedentariness_tid = osTimerNew(count_hour, osTimerPeriodic, NULL, NULL);
+    osTimerId_t health_tid = osTimerNew(count_health, osTimerPeriodic, NULL, NULL);
     hi_u16 duty = 0;
 
     while (1)
@@ -155,31 +176,37 @@ static hi_void PeripheralControlTask(hi_void *arg)
             hi_pwm_start(IOT_PWM_PORT_PWM1, duty, PWM_FREQ_DIVITION);
             hi_pwm_start(IOT_PWM_PORT_PWM2, duty, PWM_FREQ_DIVITION);
             hi_pwm_start(IOT_PWM_PORT_PWM3, duty, PWM_FREQ_DIVITION);
-            printf("\n[LED] head:%.1f\n", head);
-            
+            printf("[LED] head:%.1f\n", head);
+
             // printf("\nsitting:%d\n", sitting);
             // printf("beepstate:%d\n", beepState);
-            if (sitting && beepState) //
+            if (!sitting) // health
             {
-                printf("Enter beeper\n");
+                if (!osTimerIsRunning(health_tid))
+                {
+                    osTimerStart(health_tid, ONE_SECOND);
+                }
+            }
+            else
+            {
+                osTimerStop(health_tid);
+            }
+            if (sitting && beepState)
+            {
+                //printf("Enter beeper\n");
                 IoTPwmStart(IOT_PWM_PORT_PWM0, PWM_DUTY_50, PWM_FREQ_4K);
                 hi_sleep(BEEPER_CONTINUING);
                 hi_pwm_stop(IOT_PWM_PORT_PWM0);
             }
-            printf("sed %d\n", sedentariness_begin);
-            if (sedentariness_begin & timer_finished)
+
+            if (!osTimerIsRunning(sedentariness_tid))
             {
                 osTimerStart(sedentariness_tid, TIMER_DELAY_60S);
-                timer_finished = HI_FALSE;
-            }
-            else
-            {
-                printf("stop\n");
-                osTimerStop(sedentariness_tid);
             }
         }
         else
         {
+            osTimerStop(sedentariness_tid);
             hi_pwm_stop(IOT_PWM_PORT_PWM1);
             hi_pwm_stop(IOT_PWM_PORT_PWM2);
             hi_pwm_stop(IOT_PWM_PORT_PWM3);
@@ -190,8 +217,9 @@ static hi_void PeripheralControlTask(hi_void *arg)
 
 hi_void PeripheralControl(hi_void)
 {
-    FIVE_SECOND_tid = osTimerNew(human_leave, osTimerPeriodic, NULL, NULL);
+    FIVE_SECONDS_tid = osTimerNew(human_leave, osTimerPeriodic, NULL, NULL);
     beeper_tid = osTimerNew(stop_beeper_fiveMin, osTimerPeriodic, NULL, NULL);
+    existence_tid = osTimerNew(count_existence, osTimerPeriodic, NULL, NULL);
 
     osThreadAttr_t attr;
     attr.name = "peripheralTask";

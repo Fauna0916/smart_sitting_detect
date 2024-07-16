@@ -17,8 +17,8 @@
 #define WAITCONNECT (35000)
 extern hi_void Transimission(hi_void);
 
-hi_u16 running = HI_TRUE;
-hi_u16 sitting = HI_FALSE;
+hi_u16 running = HI_TRUE;       //true-existence
+hi_u16 sitting = HI_FALSE;     //false-health
 
 static hi_void Task(hi_void)
 {
@@ -27,7 +27,7 @@ static hi_void Task(hi_void)
     
     DepthProcess();
     PeripheralControl();
-    OledReminder();
+    Reminder();
 }
 
 hi_void SMS(hi_void)

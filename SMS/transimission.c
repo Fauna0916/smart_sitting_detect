@@ -13,9 +13,8 @@
 #include <stdlib.h>
 #include "datahandle.h"
 #include "peripheral_control.h"
+#include "hi_mem.h"
 
-/* attribute initiative to report */
-#define TAKE_THE_INITIATIVE_TO_REPORT
 /* oc request id */
 #define CN_COMMADN_INDEX "commands/request_id="
 #define CN_IOT_TASK_STACKSIZE 0x1000
@@ -23,7 +22,11 @@
 #define MAX_DISTANCE (150)
 #define ONE_SECOND (1000)
 #define ONE_MINUTE (60000)
+#define STATESIZE (25)
+#define TIMER_DELAY_60S (6000U)
 
+hi_u16 health_secs; // count the number of seconds per minute in which user sit healthy
+hi_u16 existence_secs;
 extern hi_u16 sitting;
 
 typedef void (*FnMsgCallBack)(hi_gpio_value val);
@@ -40,23 +43,24 @@ FunctionCallback g_functinoCallback;
 
 static hi_void MyMsgRcvCallBack(int qos, const char *topic, const char *payload)
 {
-   
 }
-
 
 // update sitting state
-hi_void updateState(hi_u16 sitting)
+hi_void updateState(hi_void)
 {
-    if (sitting) // sitting is unhealthy
-    {
-        IotSendMsg(0, "$oc/devices/6659c9747dbfd46fabbe3a0b_ToHi3861/user/state", "off");
-    }
-    else
-    {
-        IotSendMsg(0, "$oc/devices/6659c9747dbfd46fabbe3a0b_ToHi3861/user/state", "on");
-    }
+    char *state;
+    state = hi_malloc(0, STATESIZE);
+    sprintf(state, "healthy:%d;exist:%d", health_secs, existence_secs);
+
+    IotSendMsg(0, "$oc/devices/6659c9747dbfd46fabbe3a0b_ToHi3861/user/state", state);
+    health_secs = 0;
+    existence_secs = 0;
 }
 
+hi_void updateCallback(hi_void)
+{
+    updateState();
+}
 
 static hi_void *TransimissionTask(const char *arg)
 {
@@ -66,14 +70,14 @@ static hi_void *TransimissionTask(const char *arg)
 
     /* 云端下发回调 */
     IoTSetMsgCallback(MyMsgRcvCallBack);
-    /* 主动上报 */
-#ifdef TAKE_THE_INITIATIVE_TO_REPORT
+
+    osTimerId_t update_tid = osTimerNew(updateCallback, osTimerPeriodic, NULL, NULL);
+
+    // update sitting position state
     while (1)
     {
-        updateState(sitting);   //update sitting position state
+        osTimerStart(update_tid, TIMER_DELAY_60S);
         hi_sleep(ONE_MINUTE);
-#endif
-        hi_sleep(ONE_SECOND);
     }
     return NULL;
 }
@@ -96,4 +100,3 @@ hi_void Transimission(hi_void)
         printf("[mqtt] Falied to create Transimission!\n");
     }
 }
-
